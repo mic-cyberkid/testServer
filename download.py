@@ -44,4 +44,4 @@ if __name__ == "__main__":
         "https://drive.usercontent.google.com/u/0/uc?id=1vRvQlP9mta5txhGOaJtIRbRlg68JyIt0&export=download",
         "PhysicsChatbotServer-Windows.zip"
     )
-    print("\n✅ Download complete!")
+    print("\nDownload complete!")
