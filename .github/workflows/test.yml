@@ -48,7 +48,7 @@ jobs:
     - name: Execute app and run test file
       working-directory: unzipped
       run: |
-        PhysicsChatbotServer.exe
+        ./PhysicsChatbotServer.exe
     - name: Run tests
       working-directory: unzipped
       run: |
