@@ -20,7 +20,7 @@ jobs:
 
     - name: Install requirements if present
       run: |
-        if (Test-Path requirements.txt) { pip install requests}
+        if (Test-Path requirements.txt) { pip install requests tqdm}
 
     - name: Download Google Drive ZIP
       run: |
