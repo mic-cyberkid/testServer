@@ -38,7 +38,7 @@ jobs:
     - name: Download Qwen Model into models folder
       working-directory: unzipped/models
       run: |
-        curl -L "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf?download=true" -o Qwen3-0.6B-Q8_0.gguf
+        curl -L "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf?download=true" -o PhysicsChatbot.gguf
 
     - name: Show downloaded model
       working-directory: unzipped/models
