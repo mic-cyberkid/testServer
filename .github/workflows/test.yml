@@ -34,11 +34,7 @@ jobs:
       run: |
         Expand-Archive -LiteralPath PhysicsChatbotServer-Windows.zip -DestinationPath unzipped -Force
 
-    - name: Create models directory
-      working-directory: unzipped
-      run: |
-        mkdir models
-
+  
     - name: Download Qwen Model into models folder
       working-directory: unzipped/models
       run: |
