@@ -1,0 +1,187 @@
+name: Windows Download, Model Fetch, Test & ngrok Tunnel
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      WORKING_DIR: unzipped
+    steps:
+
+      # --------------------------------------------------------------
+      # 0. Checkout + Python + deps
+      # --------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Python requirements
+        run: |
+          if (Test-Path requirements.txt) { pip install -r requirements.txt }
+          pip install requests tqdm pytest httpx
+
+      # --------------------------------------------------------------
+      # 1. Download & unzip server binary
+      # --------------------------------------------------------------
+      - name: Download Google Drive ZIP
+        run: python download.py
+
+      - name: Verify ZIP downloaded
+        run: dir PhysicsChatbotServer-Windows.zip
+
+      - name: Extract ZIP
+        run: Expand-Archive -LiteralPath PhysicsChatbotServer-Windows.zip -DestinationPath ${{ env.WORKING_DIR }} -Force
+
+      # --------------------------------------------------------------
+      # 2. Download Qwen model
+      # --------------------------------------------------------------
+      - name: Download Qwen Model
+        working-directory: ${{ env.WORKING_DIR }}/models
+        run: |
+          curl -L "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf?download=true" -o PhysicsChatbot.gguf
+
+      - name: Show model file
+        working-directory: ${{ env.WORKING_DIR }}/models
+        run: dir
+
+      # --------------------------------------------------------------
+      # 3. **START THE SERVER FIRST** (background)
+      # --------------------------------------------------------------
+      - name: Start HTTP Server in background
+        id: start_server
+        working-directory: ${{ env.WORKING_DIR }}
+        shell: pwsh
+        run: |
+          $job = Start-Job -ScriptBlock { .\PhysicsChatbotServer.exe }
+          echo "SERVER_JOB_ID=$($job.Id)" >> $env:GITHUB_ENV
+          Write-Host "Server started as background job $($job.Id)"
+
+      # --------------------------------------------------------------
+      # 4. Wait for port 8000 to be listening
+      # --------------------------------------------------------------
+      - name: Wait for server on :8000
+        shell: pwsh
+        run: |
+          $timeout = 120   # give it up to 2 min
+          $elapsed = 0
+          while ($elapsed -lt $timeout) {
+            $ok = Test-NetConnection -ComputerName localhost -Port 8000 -InformationLevel Quiet -WarningAction SilentlyContinue
+            if ($ok) {
+              Write-Host "Server is listening on :8000"
+              exit 0
+            }
+            Start-Sleep -Seconds 2
+            $elapsed += 2
+          }
+          Write-Error "Server never bound to port 8000"
+          exit 1
+
+      # --------------------------------------------------------------
+      # 5. Install ngrok
+      # --------------------------------------------------------------
+      - name: Setup ngrok
+        shell: pwsh
+        run: |
+          $url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile ngrok.zip -UseBasicParsing
+          Expand-Archive ngrok.zip -DestinationPath . -Force
+          .\ngrok.exe authtoken ${{ secrets.NGROK_AUTHTOKEN }}
+
+      # --------------------------------------------------------------
+      # 6. Start ngrok tunnel (background) + capture URL
+      # --------------------------------------------------------------
+      - name: Start ngrok tunnel
+        id: ngrok
+        shell: pwsh
+        run: |
+          $logFile = "ngrok.log"
+          $job = Start-Job -ScriptBlock {
+            .\ngrok.exe http 8000 --log=stdout > $using:logFile 2>&1
+          }
+          echo "NGROK_JOB_ID=$($job.Id)" >> $env:GITHUB_ENV
+          Write-Host "ngrok started (Job $($job.Id)), logs -> $logFile"
+
+          # Wait for the public URL (up to ~2 min)
+          $attempt = 0
+          $publicUrl = $null
+          while ($attempt -lt 40 -and -not $publicUrl) {
+            $attempt++
+            Start-Sleep -Seconds 3
+            try {
+              $t = Invoke-RestMethod "http://localhost:4040/api/tunnels" -TimeoutSec 5
+              if ($t.tunnels.Count -gt 0) { $publicUrl = $t.tunnels[0].public_url }
+            } catch { }
+          }
+
+          if (-not $publicUrl) {
+            Write-Host "=== ngrok log tail ==="
+            Get-Content $logFile -Tail 30 | Write-Host
+            Write-Error "ngrok did not expose a public URL"
+            exit 1
+          }
+
+          echo "NGROK_URL=$publicUrl" >> $env:GITHUB_ENV
+          Write-Host "Public URL: $publicUrl"
+
+          # Immediate health-check
+          try {
+            $resp = Invoke-WebRequest -Uri $publicUrl -TimeoutSec 12 -UseBasicParsing
+            Write-Host "Health-check OK – status $($resp.StatusCode)"
+          } catch {
+            Write-Host "Health-check failed: $($_.Exception.Message)"
+            Get-Content $logFile -Tail 30 | Write-Host
+            Write-Error "Tunnel is offline (ERR_NGROK_3200 likely)"
+            exit 1
+          }
+
+      # --------------------------------------------------------------
+      # 7. Keep tunnel alive (1 h) with periodic heartbeats
+      # --------------------------------------------------------------
+      - name: Keep tunnel alive
+        if: always()
+        shell: pwsh
+        run: |
+          $url = "${{ env.NGROK_URL }}"
+          Write-Host "=== Physics Chatbot LIVE at: $url ==="
+          Write-Host "Idling for up to 1 hour – heartbeat every 5 min."
+
+          $total = 3600
+          $step  = 300
+          for ($i = 0; $i -lt $total; $i += $step) {
+            try {
+              # If your server has a /health endpoint, use it; otherwise just hit the root.
+              Invoke-WebRequest -Uri "$url/health" -TimeoutSec 8 -UseBasicParsing | Out-Null
+              Write-Host "Heartbeat OK at $(Get-Date)"
+            } catch {
+              Write-Warning "Heartbeat failed: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds $step
+          }
+
+      # --------------------------------------------------------------
+      # 8. Clean-up – stop server & ngrok jobs
+      # --------------------------------------------------------------
+      - name: Stop background jobs
+        if: always()
+        shell: pwsh
+        run: |
+          $ids = @()
+          if ($env:SERVER_JOB_ID) { $ids += $env:SERVER_JOB_ID }
+          if ($env:NGROK_JOB_ID)  { $ids += $env:NGROK_JOB_ID  }
+
+          foreach ($id in $ids) {
+            Stop-Job -Id $id -ErrorAction SilentlyContinue
+            Remove-Job -Id $id -Force -ErrorAction SilentlyContinue
+            Write-Host "Stopped job $id"
+          }
+          Get-Job | Stop-Job -PassThru | Remove-Job -Force
+          Write-Host "All background jobs terminated."
