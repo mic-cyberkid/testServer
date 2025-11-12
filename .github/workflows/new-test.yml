@@ -1,67 +1,164 @@
-      # 1. Start server in background
-      - name: Start HTTP Server in background
-        working-directory: unzipped
+name: Physics Chatbot – Deploy & Tunnel
+
+on:
+  workflow_dispatch:   # Manual trigger
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+    env:
+      WORKING_DIR: unzipped
+    steps:
+
+      # ------------------------------------------------------------------
+      # 0. Checkout & unzip the server binary
+      # ------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unzip server
         shell: pwsh
         run: |
-          $job = Start-Job -ScriptBlock {
-            .\PhysicsChatbotServer.exe
-          }
-          echo "SERVER_JOB_ID=$($job.Id)" >> $env:GITHUB_ENV
-          Write-Host "Server started in background"
+          Expand-Archive -Path PhysicsChatbotServer.zip -DestinationPath ${{ env.WORKING_DIR }} -Force
 
+      # ------------------------------------------------------------------
+      # 1. Start HTTP Server in background
+      # ------------------------------------------------------------------
+      - name: Start HTTP Server in background
+        working-directory: ${{ env.WORKING_DIR }}
+        shell: pwsh
+        run: |
+          $job = Start-Job -ScriptBlock { .\PhysicsChatbotServer.exe }
+          echo "SERVER_JOB_ID=$($job.Id)" >> $env:GITHUB_ENV
+          Write-Host "Server started (Job ID: $($job.Id))"
+
+      # ------------------------------------------------------------------
       # 2. Wait for port 8000
+      # ------------------------------------------------------------------
       - name: Wait for server to be ready
         shell: pwsh
         run: |
-          $timeout = 60
+          $timeout = 90  # Increased for slower starts
           $elapsed = 0
           while ($elapsed -lt $timeout) {
-            try {
-              $result = Test-NetConnection -ComputerName localhost -Port 8000 -InformationLevel Quiet -WarningAction SilentlyContinue
-              if ($result) {
-                Write-Host "Server is ready on port 8000"
-                exit 0
-              }
-            } catch {}
+            $ok = Test-NetConnection -ComputerName localhost -Port 8000 -InformationLevel Quiet -WarningAction SilentlyContinue
+            if ($ok) {
+              Write-Host "Server is listening on :8000"
+              exit 0
+            }
             Start-Sleep -Seconds 2
             $elapsed += 2
           }
-          Write-Error "Server failed to start on port 8000"
+          Write-Error "Server did not start within $timeout seconds"
           exit 1
 
-      # 3. Setup ngrok
+      # ------------------------------------------------------------------
+      # 3. Install ngrok
+      # ------------------------------------------------------------------
       - name: Setup ngrok
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile ngrok.zip -UseBasicParsing
+          $url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile ngrok.zip -UseBasicParsing
           Expand-Archive ngrok.zip -DestinationPath . -Force
           .\ngrok.exe authtoken ${{ secrets.NGROK_AUTHTOKEN }}
 
-      # 4. Start ngrok
+      # ------------------------------------------------------------------
+      # 4. Start ngrok tunnel + Health Check
+      # ------------------------------------------------------------------
       - name: Start ngrok tunnel
         shell: pwsh
         run: |
-          Start-Job -ScriptBlock { .\ngrok.exe http 8000 --log=stdout } | Out-Null
-          Write-Host "Waiting for ngrok..."
+          # Start ngrok in background, capture output to a file for debugging
+          $ngLog = "ngrok.log"
+          $ngJob = Start-Job -ScriptBlock { .\ngrok.exe http 8000 --log=stdout > $using:ngLog 2>&1 }
+          echo "NGROK_JOB_ID=$($ngJob.Id)" >> $env:GITHUB_ENV
+          Write-Host "ngrok started (Job ID: $($ngJob.Id)) – Logs in ngrok.log"
+
+          # Wait longer for ngrok to initialize
           $attempt = 0
           $publicUrl = $null
-          while ($attempt -lt 20 -and -not $publicUrl) {
+          while ($attempt -lt 40 -and -not $publicUrl) {  # ~2 min max
             $attempt++
             Start-Sleep -Seconds 3
             try {
-              $tunnels = Invoke-RestMethod "http://localhost:4040/api/tunnels"
+              $tunnels = Invoke-RestMethod "http://localhost:4040/api/tunnels" -TimeoutSec 5
               if ($tunnels.tunnels.Count -gt 0) {
                 $publicUrl = $tunnels.tunnels[0].public_url
+                Write-Host "Tunnel URL: $publicUrl"
               }
-            } catch {}
+            } catch {
+              Write-Host "Attempt $attempt : Waiting for ngrok API..."
+            }
           }
-          if (!$publicUrl) { Write-Error "ngrok failed"; exit 1 }
-          echo "NGROK_URL=$publicUrl" >> $env:GITHUB_ENV
-          Write-Host "LIVE: $publicUrl"
 
-      # 5. KEEP ALIVE
+          if (-not $publicUrl) {
+            Get-Content $ngLog -Tail 20 | Write-Host  # Dump last 20 lines of ngrok logs
+            Write-Error "ngrok did not expose a public URL"
+            exit 1
+          }
+
+          echo "NGROK_URL=$publicUrl" >> $env:GITHUB_ENV
+
+          # NEW: Health-check the tunnel
+          Write-Host "Health-checking tunnel..."
+          $hcAttempts = 0
+          $hcSuccess = $false
+          while ($hcAttempts -lt 10) {
+            $hcAttempts++
+            try {
+              $hcResponse = Invoke-WebRequest -Uri $publicUrl -TimeoutSec 10 -UseBasicParsing
+              if ($hcResponse.StatusCode -eq 200) {
+                Write-Host "Tunnel is healthy! (Response: $($hcResponse.StatusDescription))"
+                $hcSuccess = $true
+                break
+              }
+            } catch {
+              Write-Host "Health check $hcAttempts failed: $($_.Exception.Message)"
+              Start-Sleep -Seconds 5
+            }
+          }
+          if (-not $hcSuccess) {
+            Get-Content $ngLog -Tail 20 | Write-Host
+            Write-Error "Tunnel health check failed – endpoint may be offline (ERR_NGROK_3200 likely)"
+            exit 1
+          }
+
+          Write-Host "LIVE and healthy: $publicUrl"
+
+      # ------------------------------------------------------------------
+      # 5. Keep the tunnel alive (with periodic health checks)
+      # ------------------------------------------------------------------
       - name: Keep tunnel alive
+        if: always()
+        shell: pwsh
         run: |
-          Write-Host "Your Physics Chatbot is LIVE at: ${{ env.NGROK_URL }}"
-          Write-Host "Keep this tab open. Job ends in 1 hour (or cancel manually)"
-          Start-Sleep -Seconds 3600
+          $url = "${{ env.NGROK_URL }}"
+          Write-Host "=== Physics Chatbot is LIVE at: $url ==="
+          Write-Host "Idling for up to 1 hour with health checks every 5 min."
+
+          $totalSeconds = 3600
+          $step = 300  # 5 min intervals
+          for ($i = 0; $i -lt $totalSeconds; $i += $step) {
+            # Quick health check every interval
+            try {
+              $hc = Invoke-WebRequest -Uri $url/health -TimeoutSec 5 -UseBasicParsing  # Adjust /health to your server's health endpoint if available
+              Write-Host "Heartbeat OK at $(Get-Date) – Tunnel still alive"
+            } catch {
+              Write-Warning "Heartbeat failed at $(Get-Date): $($_.Exception.Message)"
+              # Optional: Restart ngrok job if needed, but keep simple for now
+            }
+            Start-Sleep -Seconds $step
+          }
+
+      # ------------------------------------------------------------------
+      # 6. Clean-up – stop background jobs
+      # ------------------------------------------------------------------
+      - name: Stop background jobs
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:SERVER_JOB_ID) { Stop-Job -Id $env:SERVER_JOB_ID -ErrorAction SilentlyContinue; Remove-Job -Id $env:SERVER_JOB_ID -Force }
+          if ($env:NGROK_JOB_ID) { Stop-Job -Id $env:NGROK_JOB_ID -ErrorAction SilentlyContinue; Remove-Job -Id $env:NGROK_JOB_ID -Force }
+          Get-Job | Stop-Job -PassThru | Remove-Job -ErrorAction SilentlyContinue
+          Write-Host "All background jobs terminated."
