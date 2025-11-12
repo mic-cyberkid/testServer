@@ -47,7 +47,7 @@ jobs:
       run: |
         Start-Process -FilePath "PhysicsChatbotServer.exe" -NoNewWindow
         # Optional: small delay or readiness check
-        Start-Sleep -Seconds 10
+        Start-Sleep -Seconds 50
         Write-Host "Server started in background."
 
 
