@@ -1,0 +1,89 @@
+name: Windows Download, Model Fetch, & Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install requirements if present
+      run: |
+        if (Test-Path requirements.txt) { pip install -r requirements.txt }
+        pip install requests tqdm pytest
+
+    - name: Download Google Drive ZIP
+      run: python download.py
+
+    - name: Verify ZIP downloaded
+      run: dir PhysicsChatbotServer-Windows.zip
+
+    - name: Extract ZIP
+      run: Expand-Archive -LiteralPath PhysicsChatbotServer-Windows.zip -DestinationPath unzipped -Force
+
+    - name: Download Qwen Model into models folder
+      working-directory: unzipped/models
+      run: |
+        curl -L "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf?download=true" -o PhysicsChatbot.gguf
+
+    - name: Show downloaded model
+      working-directory: unzipped/models
+      run: dir
+
+    - name: Start server and wait for readiness
+      working-directory: unzipped
+      shell: pwsh
+      run: |
+        Write-Host "Starting server..."
+        $logFile = "server.log"
+
+        # Start process and redirect output to a log file
+        $process = Start-Process -FilePath "PhysicsChatbotServer.exe" `
+                    -RedirectStandardOutput $logFile `
+                    -RedirectStandardError $logFile `
+                    -NoNewWindow -PassThru
+
+        Write-Host "Waiting for server to report ready state..."
+        $maxWait = 60  # seconds
+        $ready = $false
+
+        for ($i = 0; $i -lt $maxWait; $i++) {
+          if (Test-Path $logFile) {
+            $content = Get-Content $logFile -Raw
+            if ($content -match "http://0.0.0.0:8000") {
+              Write-Host "✅ Server reported ready!"
+              $ready = $true
+              break
+            }
+          }
+          Start-Sleep -Seconds 1
+        }
+
+        if (-not $ready) {
+          Write-Host "❌ Server did not start in time."
+          Get-Content $logFile
+          exit 1
+        }
+
+    - name: Run Python test script
+      working-directory: unzipped
+      run: python test_all.py
+
+    - name: Stop server (cleanup)
+      if: always()
+      shell: pwsh
+      run: |
+        Write-Host "Stopping server..."
+        Get-Process PhysicsChatbotServer -ErrorAction SilentlyContinue | Stop-Process -Force
+        if (Test-Path "unzziped/server.log") { Get-Content "unzziped/server.log" | Select-Object -Last 20 }
