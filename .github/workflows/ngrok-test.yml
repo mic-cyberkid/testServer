@@ -95,7 +95,7 @@ jobs:
           $proc = Start-Process -FilePath "PhysicsChatbotServer.exe" -PassThru -NoNewWindow
           echo "SERVER_PID=$($proc.Id)" >> $env:GITHUB_ENV
           Write-Host "Server started with PID: $($proc.Id)"
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 50
 
       
       # ──────────────────────────────────────────────────────────────
