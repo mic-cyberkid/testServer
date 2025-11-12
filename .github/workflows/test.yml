@@ -52,8 +52,9 @@ jobs:
 
 
     - name: Run Python test script
-      working-directory: unzipped
-      run: python test_all.py
+      shell: pwsh
+      run: |
+         python test_all.py
 
     - name: Stop server (cleanup)
       shell: pwsh
