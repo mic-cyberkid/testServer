@@ -44,19 +44,6 @@ jobs:
         run: dir
 
       # ──────────────────────────────────────────────────────────────
-      # 1. Start the server (background)
-      # ──────────────────────────────────────────────────────────────
-      - name: Start HTTP Server in background
-        id: server
-        working-directory: unzipped
-        shell: pwsh
-        run: |
-          $proc = Start-Process -FilePath "PhysicsChatbotServer.exe" -PassThru -NoNewWindow
-          echo "SERVER_PID=$($proc.Id)" >> $env:GITHUB_ENV
-          Write-Host "Server started with PID: $($proc.Id)"
-          Start-Sleep -Seconds 10
-
-      # ──────────────────────────────────────────────────────────────
       # 2. Download & Start ngrok
       # ──────────────────────────────────────────────────────────────
       - name: Setup ngrok
@@ -97,6 +84,20 @@ jobs:
           echo "NGROK_URL=$publicUrl" >> $env:GITHUB_ENV
           Write-Host "Public ngrok URL: $publicUrl"
 
+      # ──────────────────────────────────────────────────────────────
+      # 1. Start the server (background)
+      # ──────────────────────────────────────────────────────────────
+      - name: Start HTTP Server in background
+        id: server
+        working-directory: unzipped
+        shell: pwsh
+        run: |
+          $proc = Start-Process -FilePath "PhysicsChatbotServer.exe" -PassThru -NoNewWindow
+          echo "SERVER_PID=$($proc.Id)" >> $env:GITHUB_ENV
+          Write-Host "Server started with PID: $($proc.Id)"
+          Start-Sleep -Seconds 10
+
+      
       # ──────────────────────────────────────────────────────────────
       # 3. Run test script against public URL
       # ──────────────────────────────────────────────────────────────
