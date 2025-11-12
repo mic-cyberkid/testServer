@@ -47,13 +47,14 @@ jobs:
       run: |
         Start-Process -FilePath "PhysicsChatbotServer.exe" -NoNewWindow
         # Optional: small delay or readiness check
-        Start-Sleep -Seconds 50
+        Start-Sleep -Seconds 90
         Write-Host "Server started in background."
 
 
     - name: Run Python test script
       shell: pwsh
       run: |
+         Start-Sleep -Seconds 10
          python test_all.py
 
     - name: Stop server (cleanup)
