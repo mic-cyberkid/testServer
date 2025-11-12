@@ -41,50 +41,21 @@ jobs:
       working-directory: unzipped/models
       run: dir
 
-    - name: Start server and wait for readiness
+    - name: Start HTTP Server in background
       working-directory: unzipped
       shell: pwsh
       run: |
-        Write-Host "Starting server..."
-        $logFile = "server.log"
-        $errFile = "server_err.log"
+        Start-Process -FilePath "PhysicsChatbotServer.exe" -NoNewWindow
+        # Optional: small delay or readiness check
+        Start-Sleep -Seconds 10
+        Write-Host "Server started in background."
 
-        # Start process and redirect output to a log file
-        $process = Start-Process -FilePath "PhysicsChatbotServer.exe" `
-                    -RedirectStandardOutput $logFile `
-                    -RedirectStandardError $errFile `
-                    -NoNewWindow -PassThru
-
-        Write-Host "Waiting for server to report ready state..."
-        $maxWait = 60  # seconds
-        $ready = $false
-
-        for ($i = 0; $i -lt $maxWait; $i++) {
-          if (Test-Path $logFile) {
-            $content = Get-Content $logFile -Raw
-            if ($content -match "http://0.0.0.0:8000") {
-              Write-Host "✅ Server reported ready!"
-              $ready = $true
-              break
-            }
-          }
-          Start-Sleep -Seconds 1
-        }
-
-        if (-not $ready) {
-          Write-Host "❌ Server did not start in time."
-          Get-Content $logFile
-          exit 1
-        }
 
     - name: Run Python test script
       working-directory: unzipped
       run: python test_all.py
 
     - name: Stop server (cleanup)
-      if: always()
       shell: pwsh
       run: |
-        Write-Host "Stopping server..."
         Get-Process PhysicsChatbotServer -ErrorAction SilentlyContinue | Stop-Process -Force
-        if (Test-Path "unzziped/server.log") { Get-Content "unzziped/server.log" | Select-Object -Last 20 }
