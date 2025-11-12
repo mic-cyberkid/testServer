@@ -47,11 +47,12 @@ jobs:
       run: |
         Write-Host "Starting server..."
         $logFile = "server.log"
+        $errFile = "server_err.log"
 
         # Start process and redirect output to a log file
         $process = Start-Process -FilePath "PhysicsChatbotServer.exe" `
                     -RedirectStandardOutput $logFile `
-                    -RedirectStandardError $logFile `
+                    -RedirectStandardError $errFile `
                     -NoNewWindow -PassThru
 
         Write-Host "Waiting for server to report ready state..."
