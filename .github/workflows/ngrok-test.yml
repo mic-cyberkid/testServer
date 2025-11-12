@@ -54,27 +54,7 @@ jobs:
           $proc = Start-Process -FilePath "PhysicsChatbotServer.exe" -PassThru -NoNewWindow
           echo "SERVER_PID=$($proc.Id)" >> $env:GITHUB_ENV
           Write-Host "Server started with PID: $($proc.Id)"
-
-          # Wait for /health endpoint to be ready (poll every 3s, max 90s)
-          $maxWait = 90
-          $waited = 0
-          do {
-            Start-Sleep -Seconds 3
-            $waited += 3
-            try {
-              $resp = Invoke-WebRequest -Uri "http://127.0.0.1:5000/health" -TimeoutSec 5 -ErrorAction SilentlyContinue
-              if ($resp.StatusCode -eq 200) {
-                Write-Host "Server is ready at http://127.0.0.1:5000"
-                break
-              }
-            } catch { }
-          } while ($waited -lt $maxWait)
-
-          if ($waited -ge $maxWait) {
-            Write-Error "Server failed to start within $maxWait seconds"
-            Get-Process -Id $env:SERVER_PID -ErrorAction SilentlyContinue | Stop-Process -Force
-            exit 1
-          }
+          Start-Sleep -Seconds 10
 
       # ──────────────────────────────────────────────────────────────
       # 2. Download & Start ngrok
@@ -89,8 +69,8 @@ jobs:
       - name: Start ngrok tunnel
         shell: pwsh
         run: |
-          # Start ngrok in background (tunnels port 5000)
-          Start-Job -ScriptBlock { .\ngrok.exe http 5000 --log=stdout } | Out-Null
+          # Start ngrok in background (tunnels port 8000)
+          Start-Job -ScriptBlock { .\ngrok.exe http 8000 --log=stdout } | Out-Null
           Write-Host "ngrok tunnel starting..."
 
           # Wait for ngrok API and extract public URL
@@ -100,9 +80,9 @@ jobs:
 
           while ($attempt -lt $maxAttempts -and -not $publicUrl) {
             $attempt++
-            Start-Sleep -Seconds 2
+            Start-Sleep -Seconds 5
             try {
-              $tunnels = Invoke-RestMethod "http://127.0.0.1:4040/api/tunnels" -TimeoutSec 5
+              $tunnels = Invoke-RestMethod "http://localhost:4040/api/tunnels" -TimeoutSec 5
               if ($tunnels.tunnels.Count -gt 0) {
                 $publicUrl = $tunnels.tunnels[0].public_url
               }
