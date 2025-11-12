@@ -2,7 +2,7 @@ import requests
 import json
 import time
 
-BASE_URL = "http://0.0.0.0:8000/llm"
+BASE_URL = "http://localhost:8000/llm"
 
 def print_response(resp):
     print(f"\n{resp.request.method} {resp.url}")
@@ -18,7 +18,7 @@ def main():
 
     print("=== Health Check ===")
     try:
-        r = requests.get("http://0.0.0.0:8000/")
+        r = requests.get("http://localhost:8000/")
         print_response(r)
     except Exception as e:
         print("Could not reach server:", e)
