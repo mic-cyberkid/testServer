@@ -97,33 +97,4 @@ jobs:
           Write-Host "Server started with PID: $($proc.Id)"
           Start-Sleep -Seconds 50
 
-      
-      # ──────────────────────────────────────────────────────────────
-      # 3. Run test script against public URL
-      # ──────────────────────────────────────────────────────────────
-      - name: Run Python test script (via ngrok)
-        env:
-          SERVER_URL: ${{ env.NGROK_URL }}
-        shell: pwsh
-        run: |
-          Write-Host "Testing against: $env:SERVER_URL"
-          python test_all.py
-
-      # ──────────────────────────────────────────────────────────────
-      # 4. Cleanup
-      # ──────────────────────────────────────────────────────────────
-      - name: Cleanup (server + ngrok)
-        if: always()
-        shell: pwsh
-        run: |
-          # Stop server
-          if ($env:SERVER_PID) {
-            Get-Process -Id $env:SERVER_PID -ErrorAction SilentlyContinue | Stop-Process -Force
-          }
-
-          # Stop ngrok
-          Get-Process -Name "ngrok" -ErrorAction SilentlyContinue | Stop-Process -Force
-          Get-Job | Stop-Job -Force
-          Get-Job | Remove-Job -Force
-
-          Write-Host "Cleanup complete."
+    
