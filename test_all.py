@@ -2,10 +2,10 @@ import requests
 import json
 import time
 
-BASE_URL = "http://localhost:8000/llm"
+BASE_URL = "http://0.0.0.0:8000/llm"
 
 def print_response(resp):
-    print(f"\n➡️  {resp.request.method} {resp.url}")
+    print(f"\n{resp.request.method} {resp.url}")
     print(f"Status: {resp.status_code}")
     try:
         print(json.dumps(resp.json(), indent=2))
@@ -18,10 +18,10 @@ def main():
 
     print("=== Health Check ===")
     try:
-        r = requests.get("http://localhost:8000/")
+        r = requests.get("http://0.0.0.0:8000/")
         print_response(r)
     except Exception as e:
-        print("❌ Could not reach server:", e)
+        print("Could not reach server:", e)
         return
 
     # Register user (ignore 400 = already exists)
@@ -35,7 +35,7 @@ def main():
     r = requests.post(f"{BASE_URL}/token", data=data)
     print_response(r)
     if r.status_code != 200:
-        print("❌ Login failed, aborting tests.")
+        print(" Login failed, aborting tests.")
         return
     token = r.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -73,7 +73,7 @@ def main():
         if "X-Conversation-ID" in r.headers:
             conversation_id = r.headers["X-Conversation-ID"]
     except Exception as e:
-        print("⚠️ Chat stream error:", e)
+        print("Chat stream error:", e)
 
     # Conversion endpoint
     print("\n=== Conversion/Explain Endpoint ===")
@@ -99,9 +99,9 @@ def main():
         r = requests.delete(f"{BASE_URL}/conversations/{conversation_id}", headers=headers)
         print_response(r)
     else:
-        print("⚠️ No conversation_id available; skipping conversation tests.")
+        print("No conversation_id available; skipping conversation tests.")
 
-    print("\n✅ All endpoint tests finished.")
+    print("\nAll endpoint tests finished.")
 
 if __name__ == "__main__":
     main()
