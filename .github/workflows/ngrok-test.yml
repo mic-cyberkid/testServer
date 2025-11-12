@@ -57,7 +57,7 @@ jobs:
         shell: pwsh
         run: |
           # Start ngrok in background (tunnels port 8000)
-          Start-Job -ScriptBlock { .\ngrok.exe http 8000 --pooling-enabled true --log=stdout } | Out-Null
+          Start-Job -ScriptBlock { .\ngrok.exe http 8000 --log=stdout } | Out-Null
           Write-Host "ngrok tunnel starting..."
 
           # Wait for ngrok API and extract public URL
