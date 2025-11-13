@@ -15,6 +15,7 @@ def download(file_id, destination):
 
         if not token_match:
             raise RuntimeError("Could not find confirm token in response HTML!")
+            print("Please check the access restrictions on the file - (google drive - manage access)")
 
         token = token_match.group(1)
         params["confirm"] = token
