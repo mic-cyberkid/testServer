@@ -31,7 +31,7 @@ jobs:
       # 1. Download & unzip server
       # --------------------------------------------------------------
       - name: Download server
-        run: python download.py
+        run: curl -L "https://drive.usercontent.google.com/download?id=19TpgzYnf5LApXpVKJ39oWSeXUueh2TUZ&export=download&authuser=0&confirm=t&uuid=aa50552b-bcfa-4bf7-98ad-a3c590afa0fb&at=ALWLOp7_6znoyFcEOHj6ivM1mKEw%3A1763002679721" -o PhysicsChatbotServer-Windows.zip
         
       - name: Verify ZIP downloaded
         run: dir PhysicsChatbotServer-Windows.zip
