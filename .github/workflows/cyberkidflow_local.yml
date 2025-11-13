@@ -32,6 +32,10 @@ jobs:
       # --------------------------------------------------------------
       - name: Download server
         run: python download.py
+        
+      - name: Verify ZIP downloaded
+        run: dir PhysicsChatbotServer-Windows.zip
+        
 
       - name: Extract server
         run: |
