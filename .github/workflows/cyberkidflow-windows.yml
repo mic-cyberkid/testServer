@@ -1,0 +1,90 @@
+name: CyberkidFlow — Windows Server + Tunnel + Test
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  cyberkidflow:
+    runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      WORKING_DIR: unzipped
+      SERVER_PORT: 8000
+      TUNNEL_URL_FILE: tunnel_url.txt
+
+    steps:
+      # --------------------------------------------------------------
+      # 0. Checkout + Python + deps
+      # --------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          if (Test-Path requirements.txt) { pip install -r requirements.txt }
+          pip install requests tqdm httpx
+
+      # --------------------------------------------------------------
+      # 1. Download & unzip server
+      # --------------------------------------------------------------
+      - name: Download Google Drive ZIP
+        run: python download.py
+
+      - name: Extract ZIP
+        run: |
+          Expand-Archive -LiteralPath PhysicsChatbotServer-Windows.zip -DestinationPath ${{ env.WORKING_DIR }} -Force
+
+      # --------------------------------------------------------------
+      # 2. Download Qwen model
+      # --------------------------------------------------------------
+      - name: Download Qwen Model
+        working-directory: ${{ env.WORKING_DIR }}/models
+        run: |
+          curl -L "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf?download=true" -o PhysicsChatbot.gguf
+
+      # --------------------------------------------------------------
+      # 3. CYBERKIDFLOW: Start server + tunnel + test
+      # --------------------------------------------------------------
+      - name: CyberkidFlow — Start Server, Tunnel, Test
+        run: python cyberkidflow.py
+        env:
+          SERVER_EXE: ${{ env.WORKING_DIR }}\PhysicsChatbotServer.exe
+          SERVER_PORT: ${{ env.SERVER_PORT }}
+          TUNNEL_URL_FILE: ${{ env.TUNNEL_URL_FILE }}
+
+      # --------------------------------------------------------------
+      # 4. Show public URL (from file)
+      # --------------------------------------------------------------
+      - name: Show Public URL
+        run: |
+          if (Test-Path ${{ env.TUNNEL_URL_FILE }}) {
+            $url = Get-Content ${{ env.TUNNEL_URL_FILE }}
+            Write-Host "Physics Chatbot LIVE at: $url"
+            Write-Host "##[set-output name=public_url]$url"
+          } else {
+            Write-Error "Tunnel URL not found!"
+            exit 1
+          }
+
+      # --------------------------------------------------------------
+      # 5. Keep alive (1 hour) — optional
+      # --------------------------------------------------------------
+      - name: Keep tunnel alive (1 hour)
+        if: always()
+        run: |
+          $url = Get-Content ${{ env.TUNNEL_URL_FILE }} -ErrorAction SilentlyContinue
+          if (-not $url) { exit 0 }
+          Write-Host "Idling for 1 hour – heartbeat every 5 min to $url"
+          for ($i = 0; $i -lt 12; $i++) {
+            try {
+              Invoke-WebRequest -Uri "$url/health" -TimeoutSec 10 -UseBasicParsing | Out-Null
+              Write-Host "Heartbeat OK $(Get-Date)"
+            } catch {
+              Write-Warning "Heartbeat failed: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds 300
+          }
