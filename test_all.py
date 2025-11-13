@@ -14,7 +14,7 @@ def print_response(resp):
 
 def main():
     username = "test_user"
-    password = "test_pass123"
+    password = "Test_pass123"
 
     print("=== Health Check ===")
     try:
@@ -42,7 +42,7 @@ def main():
 
     # Update password
     print("\n=== Update Password ===")
-    body = {"old_password": password, "new_password": "newpass1234"}
+    body = {"old_password": password, "new_password": "Newpass1234"}
     r = requests.post(f"{BASE_URL}/update-password", headers=headers, json=body)
     print_response(r)
 
