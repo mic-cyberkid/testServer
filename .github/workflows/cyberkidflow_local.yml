@@ -1,0 +1,56 @@
+# .github/workflows/test-local.yml
+name: CyberkidFlow — Local Server + test_all.py
+on: [workflow_dispatch]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    env:
+      WORKING_DIR: unzipped
+      SERVER_PORT: 8000
+
+    steps:
+      # --------------------------------------------------------------
+      # 0. Checkout + Python
+      # --------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if (Test-Path requirements.txt) { pip install -r requirements.txt }
+          pip install requests pytest httpx
+
+      # --------------------------------------------------------------
+      # 1. Download & unzip server
+      # --------------------------------------------------------------
+      - name: Download server
+        run: python download.py
+
+      - name: Extract server
+        run: |
+          Expand-Archive -LiteralPath PhysicsChatbotServer-Windows.zip -DestinationPath ${{ env.WORKING_DIR }} -Force
+
+      # --------------------------------------------------------------
+      # 2. Download model
+      # --------------------------------------------------------------
+      - name: Download Qwen model
+        working-directory: ${{ env.WORKING_DIR }}/models
+        run: |
+          curl -L "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf?download=true" -o PhysicsChatbot.gguf
+
+      # --------------------------------------------------------------
+      # 3. CYBERKIDFLOW: Start server + run test_all.py
+      # --------------------------------------------------------------
+      - name: CyberkidFlow — Start Server & Run test_all.py
+        run: python cyberkidflow_local.py
+        env:
+          SERVER_EXE: ${{ env.WORKING_DIR }}\PhysicsChatbotServer.exe
+          SERVER_PORT: ${{ env.SERVER_PORT }}
+          TEST_SCRIPT: test_all.py
